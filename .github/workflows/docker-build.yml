@@ -59,7 +59,6 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64/v8
-          file: ./Dockerfile
           push: true
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/alitv_openlist:latest
