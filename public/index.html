@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Document</title>
+    </head>
+    <body>
+        <img id="qr" alt="" srcset="" width="300" height="300" />
+        <textarea id="token" style="width: 300px; height: 300px">扫左边二维码这里会出现token</textarea>
+    </body>
+    <script>
+        fetch("/qr")
+            .then((res) => res.json())
+            .then((res) => {
+                document.querySelector("#qr").src = res.qr_link;
+                const interval = setInterval(() => {
+                    fetch("/check?sid=" + res.sid)
+                        .then((res) => res.json())
+                        .then((res) => {
+                            if (res.status === "LoginSuccess") {
+                                document.querySelector("#token").value =
+                                    res.refresh_token;
+                                clearInterval(interval);
+                            }
+                        });
+                }, 1000);
+            });
+    </script>
+</html>
