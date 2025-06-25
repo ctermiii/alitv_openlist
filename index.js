@@ -4,6 +4,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 var app = express();
+// 解析 JSON 请求体
+app.use(express.json())
+// 解析 URL 编码请求体（如表单数据）
+app.use(express.urlencoded({ extended: true }))
 async function refreshToken(refreshTokenValue) {
     const t = Math.floor(Date.now() / 1000);
 
@@ -161,6 +165,40 @@ app.get("/token", async function (req, res) {
         }
 
         const tokenInfo = await refreshToken(refresh_ui);
+
+        console.log("tokenInfo", tokenInfo);
+
+        return res.json({
+            refresh_token: tokenInfo.refresh_token,
+            access_token: tokenInfo.access_token,
+            text: "",
+        });
+    } catch (error) {
+        return res.json({
+            refresh_token: "",
+            access_token: "",
+            text: error.message || "Unexpected error",
+        });
+    }
+});
+
+//刷新token alist兼容
+app.post("/token", async function (req, res) {
+    try {
+
+        console.log('req.body',req.body)
+
+        const { refresh_token } = req.body;
+
+        if (!refresh_token) {
+            return res.json({
+                refresh_token: "",
+                access_token: "",
+                text: "refresh_token parameter is required",
+            });
+        }
+
+        const tokenInfo = await refreshToken(refresh_token);
 
         console.log("tokenInfo", tokenInfo);
 
