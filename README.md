@@ -16,7 +16,9 @@ docker run --name=alitv_openlist -d -p 8081:8081 --restart=always ghcr.io/lilu08
 
 # 使用教程
 访问 http://IP:PORT/
+
 ![alt text](image-1.png)
+
 用阿里云盘扫码登录，右侧输入框会出现refresh_ token,复制refresh_token
 
 
