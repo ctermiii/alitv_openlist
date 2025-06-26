@@ -166,7 +166,6 @@ app.get("/token", async function (req, res) {
 
         const tokenInfo = await refreshToken(refresh_ui);
 
-        console.log("tokenInfo", tokenInfo);
 
         return res.json({
             refresh_token: tokenInfo.refresh_token,
@@ -186,7 +185,6 @@ app.get("/token", async function (req, res) {
 app.post("/token", async function (req, res) {
     try {
 
-        console.log('req.body',req.body)
 
         const { refresh_token } = req.body;
 
@@ -200,7 +198,6 @@ app.post("/token", async function (req, res) {
 
         const tokenInfo = await refreshToken(refresh_token);
 
-        console.log("tokenInfo", tokenInfo);
 
         return res.json({
             refresh_token: tokenInfo.refresh_token,
