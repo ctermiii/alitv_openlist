@@ -10,7 +10,9 @@
 - 访问http://localhost:8081/
 
 # 下载编译产物直接运行
-在Release页面下载即可
+在[Releases](https://github.com/lilu0826/alitv_openlist/releases)页面下载即可
+
+运行后访问http://localhost:8081/
 
 # docker部署
 ```

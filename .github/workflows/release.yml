@@ -28,7 +28,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist/
-          BIN_NAME=myapp-${GOOS}-${GOARCH}
+          BIN_NAME=app-${GOOS}-${GOARCH}
           if [ "$GOOS" == "windows" ]; then
             BIN_NAME="${BIN_NAME}.exe"
           fi
