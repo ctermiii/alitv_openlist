@@ -361,7 +361,6 @@ func handleTokenRefresh(c *gin.Context, refresh string) {
 func main() {
 	router := gin.Default()
 
-	router.Static("/public", "./public")
 	router.GET("/", func(c *gin.Context) {
 		c.Writer.Write(indexHtml)
 	})
