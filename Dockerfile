@@ -27,7 +27,7 @@ WORKDIR /root/
 COPY --from=builder /app/app .
 
 # 开放端口（如果有）
-EXPOSE 8080
+EXPOSE 8081
 
 # 设置环境变量
 ENV GIN_MODE=release
