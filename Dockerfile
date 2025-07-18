@@ -1,18 +1,36 @@
-# 使用官方的 Node.js 镜像作为基础镜像
-FROM node:22.12.0-alpine3.20
+# ----------- Build Stage -------------
+FROM golang:1.24 AS builder
 
-# 创建工作目录
+# 设置工作目录
 WORKDIR /app
 
-# 拷贝依赖文件并安装
-COPY package*.json ./
-RUN npm install
+# 复制go.mod和go.sum（加快缓存）
+COPY go.mod ./
+COPY go.sum ./
+RUN go mod download
 
-# 拷贝源代码
+# 复制源代码
 COPY . .
 
-# 暴露端口（如果你使用 8081 端口）
-EXPOSE 8081
+# 编译Go程序，静态链接，禁用CGO
+RUN CGO_ENABLED=0 go build -o app .
 
-# 启动应用
-CMD ["node", "index.js"]
+# ----------- Final Image -------------
+FROM alpine:latest
+
+# 安装ca-certificates（如果你需要访问HTTPS）
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /app/app .
+
+# 开放端口（如果有）
+EXPOSE 8080
+
+# 设置环境变量
+ENV GIN_MODE=release
+
+# 启动
+CMD ["./app"]

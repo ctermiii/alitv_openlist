@@ -2,12 +2,15 @@
 
 通过阿里云盘TV获取token,只需要超级会员即可不限速、不限流量使用（无需购买第三方流量包）
 
-# 本地运行
-需要有node22环境
+# 源码运行
+需要go语言环境
 - 克隆代码
-- npm i
-- npm run start
+- go mod download
+- go run main.go
 - 访问http://localhost:8081/
+
+# 下载编译产物直接运行
+在Release页面下载即可
 
 # docker部署
 ```
@@ -34,3 +37,4 @@ API地址填写：http://IP:PORT/token
 确保OpenList部署的机器能访问到http://IP:PORT/token
 
 完事
+

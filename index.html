@@ -98,21 +98,26 @@
     </div>
 
     <script>
-        fetch("/qr")
-            .then((res) => res.json())
-            .then((res) => {
-                document.querySelector("#qr").src = res.qr_link;
-                const interval = setInterval(() => {
-                    fetch("/check?sid=" + res.sid)
-                        .then((res) => res.json())
-                        .then((res) => {
-                            if (res.status === "LoginSuccess") {
-                                document.querySelector("#token").value = res.refresh_token;
-                                clearInterval(interval);
-                            }
-                        });
-                }, 1000);
-            });
+        async function getQr() {
+            const qrData = await fetch("/qr")
+            const res = await qrData.json()
+            document.querySelector("#qr").src = res.qr_link;
+            trackLogin(res.sid);
+        }
+
+        async function trackLogin(sid) {
+            while (true) {
+                const statusData = await fetch("/check?sid=" + sid)
+                const status = await statusData.json()
+                if (status.status === "LoginSuccess") {
+                    document.querySelector("#token").value = status.refresh_token;
+                    break
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        getQr();
     </script>
 
 
