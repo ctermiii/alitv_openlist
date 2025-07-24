@@ -40,3 +40,8 @@ API地址填写：http://IP:PORT/token
 
 完事
 
+# Alist兼容
+
+将扫码得到的刷新令牌和Oauth令牌链接填入即可
+
+![alt text](image-1.png)
