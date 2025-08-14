@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -25,9 +28,80 @@ var client = resty.New()
 //go:embed index.html
 var indexHtml []byte
 
-func Decrypt(ciphertextB64, ivHex, t string) (string, error) {
-	keyStr := GenerateKey(t)
+// 生成随机字符串iv向量（16位）
+func randomString(length int) string {
+	if length <= 0 {
+		length = 32 // 默认 32
+	}
 
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+
+	// 用时间作为随机种子
+	rand.Seed(time.Now().UnixNano())
+
+	for i := range result {
+		result[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(result)
+}
+
+// 计算签名
+func getSign(apiPath string, t string) string {
+	params := GetParams(t)
+	key := GenerateKey(t)
+
+	// 原始数据
+	data := fmt.Sprintf("POST-/api%v-%v-%v-%v", apiPath, t, params["d"], key)
+	// 计算 SHA256
+	hash := sha256.Sum256([]byte(data))
+
+	// 转为十六进制字符串
+	hashStr := hex.EncodeToString(hash[:])
+
+	return hashStr
+}
+
+func Encrypt(plaintextStr, ivHex, keyStr string) (string, error) {
+	// 1. 解析 key
+	key := []byte(keyStr)
+	if len(key) != 32 {
+		return "", errors.New("key 长度必须为 32 字节（AES-256）")
+	}
+
+	// 2. 解析 IV
+	iv := []byte(ivHex)
+	if len(iv) != aes.BlockSize {
+		return "", errors.New("IV 长度必须为 16 字节（128 位）")
+	}
+
+	// 3. 转为字节并 PKCS7 padding
+	plaintext := []byte(plaintextStr)
+	plaintext = pkcs7Pad(plaintext, aes.BlockSize)
+
+	// 4. 初始化 AES-256
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("创建 AES cipher 失败: %w", err)
+	}
+
+	// 5. CBC 加密
+	ciphertext := make([]byte, len(plaintext))
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(ciphertext, plaintext)
+
+	// 6. Base64 编码返回
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// PKCS7 填充
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padding := blockSize - len(data)%blockSize
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(data, padText...)
+}
+
+func Decrypt(ciphertextB64, ivHex, keyStr string) (string, error) {
 	// 1. 解析 key（hex 转 []byte）
 	key := []byte(keyStr)
 	if len(key) != 32 {
@@ -87,7 +161,6 @@ func pkcs7Unpad(data []byte, blockSize int) ([]byte, error) {
 	return data[:len(data)-padLen], nil
 }
 
-
 func h(charArray []rune, modifier interface{}) string {
 	// 去重
 	uniqueMap := make(map[rune]bool)
@@ -126,15 +199,16 @@ func h(charArray []rune, modifier interface{}) string {
 
 func GetParams(t interface{}) map[string]string {
 	return map[string]string{
-		"akv":    "2.8.1496",                      // apk_version_name 版本号
-		"apv":    "1.3.6",                         // 内部版本号
-		"b":      "XiaoMi",                        // 手机品牌
-		"d":      "e87a4d5f4f28d7a17d73c524eaa8ac37", // 设备id 可随机生成
-		"m":      "23046RP50C",                    // 手机型号
-		"mac":    "",                             // mac地址
-		"n":      "23046RP50C",                    // 手机型号
-		"t":      fmt.Sprintf("%v", t),            // 时间戳
-		"wifiMac": "020000000000",                 // wifiMac地址
+		"akv":     "2.8.1496",                         // apk_version_name 版本号
+		"apv":     "1.4.1",                            // 内部版本号
+		"b":       "vivo",                             // 手机品牌
+		"d":       "2c7d30cd7ae5e8017384988393f397c6", // 设备id 可随机生成
+		"m":       "V2329A",                           // 手机型号
+		"n":       "V2329A",                           // 手机型号名称
+		"mac":     "",                                 // mac地址
+		"wifiMac": "00db00200063",                     // wifiMac地址
+		"nonce":   "",								   // 随机字符串(好像没用)
+		"t":       fmt.Sprintf("%v", t),               // 时间戳
 	}
 }
 
@@ -173,6 +247,58 @@ func abs(x int) int {
 	return x
 }
 
+// 获取时间戳
+func getTimestamp() string {
+	statusResp, err := client.R().
+		Get("https://api.extscreen.com/timestamp")
+	if err != nil || statusResp.StatusCode() != 200 {
+		return strconv.FormatInt(time.Now().Unix(), 10)
+	}
+	var statusData map[string]interface{}
+	json.Unmarshal(statusResp.Body(), &statusData)
+	if statusData["code"].(float64) != 200 {
+		return strconv.FormatInt(time.Now().Unix(), 10)
+	}
+	data := statusData["data"].(map[string]interface{})
+
+	// strconv.FormatInt((int64)data["timestamp"].(float64), 10);
+	return strconv.FormatInt(int64(data["timestamp"].(float64)), 10)
+}
+
+func GenerateRequestInfo(apiPath string, body map[string]interface{}) (map[string]interface{}, error) {
+	t := getTimestamp()
+	keyStr := GenerateKey(t)
+	headers := GetParams(t)
+	bodyJsonBytes, err := json.Marshal(body)
+	if err != nil {
+		fmt.Println("JSON 编码失败:", err)
+		return nil, err
+	}
+	bodyJsonStr := string(bodyJsonBytes)
+
+	iv := randomString(16)
+
+	encrypted, err := Encrypt(bodyJsonStr, iv, keyStr)
+	if err != nil {
+		fmt.Println("AES 加密失败:", err)
+		return nil, err
+	}
+
+	encryptedBody := map[string]interface{}{
+		"ciphertext": encrypted,
+		"iv":         iv,
+	}
+
+	headers["Content-Type"] = "application/json"
+	headers["sign"] = getSign(apiPath, t)
+
+	return map[string]interface{}{
+		"headers": headers,
+		"body":    encryptedBody,
+		"key":     keyStr,
+	}, nil
+}
+
 // 获取二维码
 func getQRCode(c *gin.Context) {
 	body := map[string]interface{}{
@@ -180,10 +306,15 @@ func getQRCode(c *gin.Context) {
 		"width":  500,
 		"height": 500,
 	}
+	requestInfo, err := GenerateRequestInfo("/v2/qrcode", body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
+	}
 	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(body).
-		Post("https://api.extscreen.com/aliyundrive/qrcode")
+		SetHeaders(requestInfo["headers"].(map[string]string)).
+		SetBody(requestInfo["body"].(map[string]interface{})).
+		Post("https://api.extscreen.com/aliyundrive/v2/qrcode")
 
 	if err != nil || resp.StatusCode() != 200 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate QR code"})
@@ -192,11 +323,22 @@ func getQRCode(c *gin.Context) {
 
 	var result map[string]interface{}
 	json.Unmarshal(resp.Body(), &result)
-
 	data := result["data"].(map[string]interface{})
+
+	respCiphertext := data["ciphertext"].(string)
+	respIv := data["iv"].(string)
+
+	plain, err := Decrypt(respCiphertext, respIv, requestInfo["key"].(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var qrcodeInfo map[string]string
+	json.Unmarshal([]byte(plain), &qrcodeInfo)
 	c.JSON(http.StatusOK, gin.H{
-		"qr_link": data["qrCodeUrl"],
-		"sid":     data["sid"],
+		"qr_link": qrcodeInfo["qrCodeUrl"],
+		"sid":     qrcodeInfo["sid"],
 	})
 }
 
@@ -220,62 +362,10 @@ func checkStatus(c *gin.Context) {
 
 	if statusData["status"] == "LoginSuccess" {
 		authCode := statusData["authCode"].(string)
-		tokenInfo, err := getTokenFromCode(authCode)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": "LoginFailed"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        "LoginSuccess",
-				"refresh_token": tokenInfo["refresh_token"],
-				"access_token":  tokenInfo["access_token"],
-			})
-		}
+		handleToken(c, map[string]interface{}{"code": authCode})
 		return
 	}
-
 	c.JSON(http.StatusOK, statusData)
-}
-
-func getTokenFromCode(code string) (map[string]string, error) {
-	t := time.Now().Unix()
-	params := GetParams(strconv.FormatInt(t, 10))
-	params["code"] = code
-	params["Content-Type"] = "application/json"
-
-	headers := map[string]string{}
-	for k, v := range params {
-		headers[k] = fmt.Sprintf("%v", v)
-	}
-
-	resp, err := client.R().
-		SetHeaders(headers).
-		SetBody(params).
-		Post("https://api.extscreen.com/aliyundrive/v3/token")
-
-	if err != nil || resp.StatusCode() != 200 {
-		return nil, err
-	}
-
-	var tokenData map[string]interface{}
-	json.Unmarshal(resp.Body(), &tokenData)
-
-
-	if tokenData["code"].(float64) != 200 {
-		return nil, errors.New(tokenData["message"].(string))
-	}
-
-	data := tokenData["data"].(map[string]interface{})
-	ciphertext := data["ciphertext"].(string)
-	iv := data["iv"].(string)
-
-	plain, err := Decrypt(ciphertext, iv, strconv.FormatInt(t, 10))
-	if err != nil {
-		return nil, err
-	}
-
-	var token map[string]string
-	json.Unmarshal([]byte(plain), &token)
-	return token, nil
 }
 
 // GET /token
@@ -289,7 +379,7 @@ func getToken(c *gin.Context) {
 		})
 		return
 	}
-	handleTokenRefresh(c, refresh)
+	handleToken(c, map[string]interface{}{"refresh_token": refresh})
 }
 
 // POST /token
@@ -305,24 +395,20 @@ func postToken(c *gin.Context) {
 		})
 		return
 	}
-	handleTokenRefresh(c, body.RefreshToken)
+	handleToken(c, map[string]interface{}{"refresh_token": body.RefreshToken})
 }
 
-func handleTokenRefresh(c *gin.Context, refresh string) {
-	t := time.Now().Unix()
-	params := GetParams(strconv.FormatInt(t, 10))
-	params["refresh_token"] = refresh
-	params["Content-Type"] = "application/json"
-
-	headers := map[string]string{}
-	for k, v := range params {
-		headers[k] = fmt.Sprintf("%v", v)
+// 获取 token
+func handleToken(c *gin.Context, body map[string]interface{}) {
+	requestInfo, err := GenerateRequestInfo("/v4/token", body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
 	}
-
 	resp, err := client.R().
-		SetHeaders(headers).
-		SetBody(params).
-		Post("https://api.extscreen.com/aliyundrive/v3/token")
+		SetHeaders(requestInfo["headers"].(map[string]string)).
+		SetBody(requestInfo["body"].(map[string]interface{})).
+		Post("https://api.extscreen.com/aliyundrive/v4/token")
 
 	if err != nil || resp.StatusCode() != 200 {
 		c.JSON(http.StatusOK, gin.H{
@@ -335,9 +421,10 @@ func handleTokenRefresh(c *gin.Context, refresh string) {
 
 	var tokenData map[string]interface{}
 	json.Unmarshal(resp.Body(), &tokenData)
+
 	data := tokenData["data"].(map[string]interface{})
 
-	plain, err := Decrypt(data["ciphertext"].(string), data["iv"].(string), strconv.FormatInt(t, 10))
+	plain, err := Decrypt(data["ciphertext"].(string), data["iv"].(string), requestInfo["key"].(string))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"refresh_token": "",
@@ -356,7 +443,6 @@ func handleTokenRefresh(c *gin.Context, refresh string) {
 		"text":          "",
 	})
 }
-
 
 func main() {
 	router := gin.Default()

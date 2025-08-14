@@ -109,7 +109,7 @@
             while (true) {
                 const statusData = await fetch("/check?sid=" + sid)
                 const status = await statusData.json()
-                if (status.status === "LoginSuccess") {
+                if (status.refresh_token) {
                     document.querySelector("#token").value = status.refresh_token;
                     break
                 }
